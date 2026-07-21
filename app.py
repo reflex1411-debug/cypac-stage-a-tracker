@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import datetime
@@ -32,6 +31,7 @@ CYPAC_ROOMS = [
 ]
 
 today_str = datetime.date.today().strftime("%Y-%m-%d")
+room_names = [r["room"] for r in CYPAC_ROOMS]
 
 # Header Title
 st.title("🎧 CYPAC Audiology — Stage A Equipment Console")
@@ -44,69 +44,81 @@ page = st.sidebar.radio("Go to:", ["📋 Live Check Form", "📌 Today's Board",
 query_params = st.query_params
 qr_room_param = query_params.get("room", None)
 
+# Handle QR Code pre-selection & Session State persistence
+if "selected_room" not in st.session_state:
+    if qr_room_param and qr_room_param in room_names:
+        st.session_state.selected_room = qr_room_param
+    else:
+        st.session_state.selected_room = room_names[0]
+
 # =========================================================================
-# PAGE 1: LIVE CHECK FORM (QR CODE AUTO-SELECT)
+# PAGE 1: LIVE CHECK FORM (FIXED ROOM SELECTION PERSISTENCE)
 # =========================================================================
 if page == "📋 Live Check Form":
     st.subheader("Submit Stage A Equipment Check")
     
-    # Auto-match room from QR URL if present
-    default_index = 0
-    room_names = [r["room"] for r in CYPAC_ROOMS]
-    if qr_room_param and qr_room_param in room_names:
-        default_index = room_names.index(qr_room_param)
-        st.success(f"🔗 Pre-selected room via QR Scan: **{qr_room_param}**")
+    if qr_room_param and qr_room_param in room_names and st.session_state.selected_room != qr_room_param:
+        st.session_state.selected_room = qr_room_param
 
-    with st.form("stage_a_form", clear_on_submit=True):
-        col1, col2 = st.columns(2)
+    # Room selection and Status placed outside form to preserve selection seamlessly during re-renders
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Find index of persistent room selection
+        current_idx = room_names.index(st.session_state.selected_room) if st.session_state.selected_room in room_names else 0
         
-        with col1:
-            selected_room = st.selectbox("Select Clinic Room / Site *", room_names, index=default_index)
-            
-            # Lookup site matching selected room
-            selected_site = next((item["site"] for item in CYPAC_ROOMS if item["room"] == selected_room), "CYPAC")
-            
-            status = st.radio(
-                "Stage A Check Status *",
-                ["Completed", "Not in Use", "Reporting Faulty Equipment"],
-                index=0
+        selected_room = st.selectbox(
+            "Select Clinic Room / Site *", 
+            room_names, 
+            index=current_idx,
+            key="room_selectbox"
+        )
+        # Update session state on change
+        st.session_state.selected_room = selected_room
+        
+        selected_site = next((item["site"] for item in CYPAC_ROOMS if item["room"] == selected_room), "CYPAC")
+        
+        status = st.radio(
+            "Stage A Check Status *",
+            ["Completed", "Not in Use", "Reporting Faulty Equipment"],
+            index=0,
+            key="status_radio"
+        )
+
+    with col2:
+        clinician = st.text_input("Clinician Initials *", max_chars=5, key="clinician_input")
+        check_date = st.date_input("Check Date", datetime.date.today(), key="check_date_input")
+
+    fault_desc = ""
+    if status == "Reporting Faulty Equipment":
+        st.warning(f"⚠️ Fault reported for **{selected_room}**. Please provide details below:")
+        fault_desc = st.text_area("Describe Equipment Fault Details *", key="fault_desc_input")
+
+    st.markdown("---")
+    if st.button("⚡ Save Check Record", use_container_width=True, type="primary"):
+        if not clinician:
+            st.error("Please enter your initials before submitting.")
+        elif status == "Reporting Faulty Equipment" and not fault_desc:
+            st.error("Please describe the equipment fault.")
+        else:
+            db.save_check(
+                check_date.strftime("%Y-%m-%d"), 
+                selected_site, 
+                selected_room, 
+                status, 
+                clinician, 
+                fault_desc
             )
-        
-        with col2:
-            clinician = st.text_input("Clinician Initials *", max_chars=5)
-            check_date = st.date_input("Check Date", datetime.date.today())
-            
-        fault_desc = ""
-        if status == "Reporting Faulty Equipment":
-            fault_desc = st.text_area("Describe Equipment Fault Details *")
-            
-        submitted = st.form_submit_button("⚡ Save Check Record", use_container_width=True)
-        
-        if submitted:
-            if not clinician:
-                st.error("Please enter your initials before submitting.")
-            elif status == "Reporting Faulty Equipment" and not fault_desc:
-                st.error("Please describe the equipment fault.")
-            else:
-                db.save_check(
-                    check_date.strftime("%Y-%m-%d"), 
-                    selected_site, 
-                    selected_room, 
-                    status, 
-                    clinician, 
-                    fault_desc
-                )
-                st.success(f"✅ Record saved for {selected_room} [{status}]!")
+            st.success(f"✅ Record saved for **{selected_room}** [{status}]!")
 
 # =========================================================================
-# PAGE 2: TODAY'S LIVE STATUS BOARD (ALL 12 ROOMS)
+# PAGE 2: TODAY'S LIVE STATUS BOARD
 # =========================================================================
 elif page == "📌 Today's Board":
     st.subheader(f"CYPAC Status Board — {today_str}")
     
     df_today = db.get_today_checks(today_str)
     
-    # 3 Column Card Layout
     cols = st.columns(3)
     for idx, r_info in enumerate(CYPAC_ROOMS):
         room = r_info["room"]
@@ -144,11 +156,9 @@ elif page == "📊 Audit Dashboard":
         faulty = len(df_all[df_all["status"] == "Reporting Faulty Equipment"])
         not_in_use = len(df_all[df_all["status"] == "Not in Use"])
         
-        # BAA Compliance Formula: (Completed + Faulty) / (Total - Not In Use)
         denominator = total_checks - not_in_use
         compliance_rate = ((completed + faulty) / denominator * 100) if denominator > 0 else 0
         
-        # Metric Cards Banner
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Overall Compliance Rate", f"{compliance_rate:.1f}%")
         m2.metric("Total Completed", completed)
