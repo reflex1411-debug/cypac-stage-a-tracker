@@ -7,11 +7,12 @@ DB_DIR = "data"
 DB_FILE = os.path.join(DB_DIR, "cypac_checks.db")
 
 def init_db():
-    """Initializes the database schema with full audit fields."""
+    """Initializes and auto-migrates database schema to support all audit fields."""
     os.makedirs(DB_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     
+    # 1. Base Table Creation
     c.execute('''
         CREATE TABLE IF NOT EXISTS daily_checks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,37 +21,49 @@ def init_db():
             room_name TEXT NOT NULL,
             status TEXT NOT NULL,
             clinician TEXT NOT NULL,
-            restocked_initials TEXT,
-            cleaned_wiped TEXT,
-            tymp_sn TEXT,
-            tymp_2cc TEXT,
-            tymp_b TEXT,
-            tymp_oae TEXT,
-            audio_hp TEXT,
-            audio_in TEXT,
-            audio_hpm TEXT,
-            audio_inm TEXT,
-            audio_bc TEXT,
-            audio_sf TEXT,
-            audio_hf_phones TEXT,
-            audio_hfm TEXT,
-            audio_vra TEXT,
-            audio_music TEXT,
-            audio_tablets TEXT,
-            eclipse_hp TEXT,
-            eclipse_in TEXT,
-            eclipse_hpm TEXT,
-            eclipse_inm TEXT,
-            eclipse_bc TEXT,
-            eclipse_imp TEXT,
-            eclipse_cortical_sf TEXT,
-            serial_matched TEXT,
-            fault_found TEXT,
             fault_description TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
+    # 2. Schema Auto-Migration: Add missing audit columns to existing table
+    c.execute("PRAGMA table_info(daily_checks)")
+    existing_cols = [row[1] for row in c.fetchall()]
+    
+    audit_columns = {
+        "restocked_initials": "TEXT",
+        "cleaned_wiped": "TEXT",
+        "tymp_sn": "TEXT",
+        "tymp_2cc": "TEXT",
+        "tymp_b": "TEXT",
+        "tymp_oae": "TEXT",
+        "audio_hp": "TEXT",
+        "audio_in": "TEXT",
+        "audio_hpm": "TEXT",
+        "audio_inm": "TEXT",
+        "audio_bc": "TEXT",
+        "audio_sf": "TEXT",
+        "audio_hf_phones": "TEXT",
+        "audio_hfm": "TEXT",
+        "audio_vra": "TEXT",
+        "audio_music": "TEXT",
+        "audio_tablets": "TEXT",
+        "eclipse_hp": "TEXT",
+        "eclipse_in": "TEXT",
+        "eclipse_hpm": "TEXT",
+        "eclipse_inm": "TEXT",
+        "eclipse_bc": "TEXT",
+        "eclipse_imp": "TEXT",
+        "eclipse_cortical_sf": "TEXT",
+        "serial_matched": "TEXT",
+        "fault_found": "TEXT"
+    }
+    
+    for col_name, col_type in audit_columns.items():
+        if col_name not in existing_cols:
+            c.execute(f"ALTER TABLE daily_checks ADD COLUMN {col_name} {col_type}")
+
+    # 3. Equipment Faults Logbook Table
     c.execute('''
         CREATE TABLE IF NOT EXISTS equipment_faults (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,6 +75,7 @@ def init_db():
             status TEXT DEFAULT 'Open'
         )
     ''')
+    
     conn.commit()
     conn.close()
 
