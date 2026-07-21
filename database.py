@@ -26,7 +26,7 @@ def init_db():
         )
     ''')
     
-    # Auto-migration for audit columns
+    # Auto-migration for granular audit columns
     c.execute("PRAGMA table_info(daily_checks)")
     existing_cols = [row[1] for row in c.fetchall()]
     audit_columns = {
@@ -105,6 +105,7 @@ def init_db():
     conn.close()
 
 def save_check(check_data):
+    """Saves or updates a detailed daily check record."""
     init_db()
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -162,6 +163,7 @@ def save_check(check_data):
     conn.close()
 
 def update_fault_status(fault_id, new_status, notes=""):
+    """Updates fault repair lifecycle status."""
     init_db()
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -175,6 +177,7 @@ def update_fault_status(fault_id, new_status, notes=""):
     conn.close()
 
 def get_faults_by_status(status_type="Active"):
+    """Fetches active or resolved faults."""
     init_db()
     conn = sqlite3.connect(DB_FILE)
     if status_type == "Active":
@@ -186,6 +189,7 @@ def get_faults_by_status(status_type="Active"):
     return df
 
 def get_all_faults_data():
+    """Fetches all faults for reliability analytics."""
     init_db()
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query("SELECT * FROM equipment_faults ORDER BY date_reported DESC", conn)
@@ -193,6 +197,7 @@ def get_all_faults_data():
     return df
 
 def add_calibration_record(device_name, serial_no, room_name, last_cal_str):
+    """Adds or updates an annual equipment calibration record."""
     init_db()
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -209,6 +214,7 @@ def add_calibration_record(device_name, serial_no, room_name, last_cal_str):
     conn.close()
 
 def get_calibration_records():
+    """Fetches calibration schedule and calculates countdown days."""
     init_db()
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query("SELECT * FROM equipment_calibrations ORDER BY next_calibration ASC", conn)
@@ -227,6 +233,7 @@ def get_calibration_records():
     return df
 
 def save_asset(asset_tag, device_name, home_site, home_room, current_status, last_cal, next_cal, notes=""):
+    """Saves or updates an asset in the Master Register."""
     init_db()
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -246,6 +253,7 @@ def save_asset(asset_tag, device_name, home_site, home_room, current_status, las
     conn.close()
 
 def get_asset_register():
+    """Retrieves all assets from the Master Register."""
     init_db()
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query("SELECT * FROM equipment_assets ORDER BY home_room ASC", conn)
@@ -266,6 +274,7 @@ def get_asset_register():
     return df
 
 def log_device_transfer(device_name, serial_no, from_room, to_room, clinician, reason=""):
+    """Logs an equipment relocation event."""
     init_db()
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -277,6 +286,7 @@ def log_device_transfer(device_name, serial_no, from_room, to_room, clinician, r
     conn.close()
 
 def get_today_transfers(transfer_date):
+    """Retrieves equipment movements logged for today."""
     init_db()
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query("SELECT * FROM equipment_transfers WHERE transfer_date = ? ORDER BY timestamp DESC", conn, params=(transfer_date,))
@@ -284,6 +294,7 @@ def get_today_transfers(transfer_date):
     return df
 
 def get_today_checks(check_date):
+    """Retrieves daily check records logged for today."""
     init_db()
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query("SELECT * FROM daily_checks WHERE check_date = ?", conn, params=(check_date,))
@@ -291,6 +302,7 @@ def get_today_checks(check_date):
     return df
 
 def get_all_checks():
+    """Retrieves complete historical audit log."""
     init_db()
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query("SELECT * FROM daily_checks ORDER BY check_date DESC", conn)
