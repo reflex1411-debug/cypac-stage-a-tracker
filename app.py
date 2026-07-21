@@ -4,9 +4,8 @@ import datetime
 import plotly.express as px
 import database as db
 
-# Page Config
 st.set_page_config(
-    page_title="CYPAC Audiology — Stage A Audit Console",
+    page_title="CYPAC Audiology — Stage A Audit & Calibration Console",
     page_icon="🎧",
     layout="wide"
 )
@@ -31,10 +30,16 @@ CYPAC_ROOMS = [
 today_str = datetime.date.today().strftime("%Y-%m-%d")
 room_names = [r["room"] for r in CYPAC_ROOMS]
 
-st.title("🎧 CYPAC Audiology — Stage A Audit & Check Console")
+st.title("🎧 CYPAC Audiology — Stage A Audit & Management Console")
 
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to:", ["📋 Live Check Form", "📌 Today's Board", "📊 Audit Dashboard", "⚠️ Fault Logbook"])
+page = st.sidebar.radio("Go to:", [
+    "📋 Live Check Form", 
+    "📌 Today's Board", 
+    "⚠️ Fault Logbook", 
+    "📅 Calibration Tracker", 
+    "📊 Audit Dashboard"
+])
 
 query_params = st.query_params
 qr_room_param = query_params.get("room", None)
@@ -55,7 +60,6 @@ if page == "📋 Live Check Form":
         st.session_state.selected_room = qr_room_param
 
     col_top1, col_top2, col_top3 = st.columns(3)
-    
     with col_top1:
         current_idx = room_names.index(st.session_state.selected_room) if st.session_state.selected_room in room_names else 0
         selected_room = st.selectbox("Select Clinic Room / Site *", room_names, index=current_idx, key="room_selectbox")
@@ -72,11 +76,9 @@ if page == "📋 Live Check Form":
 
     st.markdown("---")
 
-    # EXPANDER 1: HYGIENE
     with st.expander("🧹 1. Room Hygiene & Cleaning", expanded=True):
         cleaned_wiped = st.checkbox("Table & hard surfaces wiped down?", value=True)
 
-    # EXPANDER 2: TYMPANOMETER
     with st.expander("🔊 2. Tympanometer Checks", expanded=True):
         c1, c2, c3, c4 = st.columns(4)
         tymp_sn = c1.text_input("Titan Asset No / GSI SN", key="tymp_sn")
@@ -84,7 +86,6 @@ if page == "📋 Live Check Form":
         tymp_b = "Y" if c3.checkbox("B Pass", value=True, key="tymp_b") else "N"
         tymp_oae = "Y" if c4.checkbox("OAE Pass", value=True, key="tymp_oae") else "N"
 
-    # EXPANDER 3: AUDIOMETER
     with st.expander("🎧 3. Audiometer & Transducers", expanded=True):
         st.info("📌 **Transducer Serial Mapping:** HUMB: 3045501 | PA: 3045015 | NHSP: 2003234 | TEAL: 126400 | LIME: 126398 | ORANGE: 1937681 | KAL BOOTH BC: 304599 | 20K BC: 2003233")
         
@@ -105,7 +106,6 @@ if page == "📋 Live Check Form":
         audio_music = "Y" if ast4.checkbox("Music Files") else "N"
         audio_tablets = "Y" if ast5.checkbox("Tablets") else "N"
 
-    # EXPANDER 4: ECLIPSE ABR & CORTICAL
     with st.expander("⚡ 4. Eclipse (ASSR / ABR / Cortical)", expanded=False):
         st.markdown("##### ABR Checks")
         e1, e2, e3, e4, e5, e6 = st.columns(6)
@@ -119,12 +119,10 @@ if page == "📋 Live Check Form":
         st.markdown("##### Cortical Checks")
         eclipse_cortical_sf = "Y" if st.checkbox("Cortical SF") else "N"
 
-    # EXPANDER 5: AUDIT VERIFICATION & FAULT REPORTING
     with st.expander("✅ 5. Verification & Fault Reporting", expanded=True):
         v1, v2 = st.columns(2)
         serial_matched = "Y" if v1.checkbox("Equipment Serial Numbers Checked & Match?", value=True) else "N"
         fault_found = "Y" if v2.checkbox("Fault Found?", value=(status == "Reporting Faulty Equipment")) else "N"
-        
         fault_description = st.text_area("Notes / Fault Description", placeholder="e.g., Initially OEAs did not come through but no issues after changing tip")
 
     st.markdown("---")
@@ -172,7 +170,7 @@ elif page == "📌 Today's Board":
                 fault_flag = match.iloc[0]["fault_found"]
                 
                 if current_status == "Completed":
-                    st.success(f"### {room}\n**Site:** {site} | **Status:** ✅ Completed\n\n*By:* {clinician} | *Fault:* {fault_flag}")
+                    st.success(f"### {room}\n**Site:** {site} | **Status:** ✅ Completed\n\n*By:* {clinician}")
                 elif current_status == "Not in Use":
                     st.warning(f"### {room}\n**Site:** {site} | **Status:** 🟡 Not in Use\n\n*By:* {clinician}")
                 else:
@@ -181,7 +179,69 @@ elif page == "📌 Today's Board":
                 st.info(f"### {room}\n**Site:** {site} | **Status:** ⚪ Not Performed")
 
 # =========================================================================
-# PAGE 3: AUDIT DASHBOARD & MASTER LOG DATASET
+# PAGE 3: FAULT LOGBOOK (LIFECYCLE MANAGEMENT)
+# =========================================================================
+elif page == "⚠️ Fault Logbook":
+    st.subheader("Equipment Faults Management & Lifecycle Tracker")
+    
+    tab_active, tab_resolved = st.tabs(["🔴 Awaiting Repair / In Progress", "✅ Resolved Faults History"])
+    
+    with tab_active:
+        df_open = db.get_faults_by_status("Active")
+        if df_open.empty:
+            st.success("🎉 No active equipment faults logged!")
+        else:
+            st.warning(f"⚠️ **{len(df_open)} open issue(s)** pending resolution.")
+            st.dataframe(df_open[["id", "date_reported", "site", "room_name", "fault_details", "reported_by", "status"]], use_container_width=True)
+            
+            st.markdown("---")
+            st.markdown("### 🔧 Update Fault Repair Status")
+            with st.form("update_fault_form"):
+                col_f1, col_f2 = st.columns(2)
+                fault_id = col_f1.selectbox("Select Fault ID to Update", df_open["id"].tolist())
+                new_status = col_f2.selectbox("Set New Status", ["In Repair", "Awaiting Parts", "Resolved"])
+                resolution_notes = st.text_area("Resolution / Repair Notes", placeholder="e.g., Replacement tip installed / Calibrated by engineer")
+                
+                if st.form_submit_button("Update Fault Status", type="primary"):
+                    db.update_fault_status(fault_id, new_status, resolution_notes)
+                    st.success(f"Fault #{fault_id} updated to **{new_status}**!")
+
+    with tab_resolved:
+        df_resolved = db.get_faults_by_status("Resolved")
+        if df_resolved.empty:
+            st.info("No resolved faults on record yet.")
+        else:
+            st.dataframe(df_resolved[["id", "date_reported", "date_resolved", "site", "room_name", "fault_details", "reported_by", "resolution_notes"]], use_container_width=True)
+
+# =========================================================================
+# PAGE 4: CALIBRATION TRACKER
+# =========================================================================
+elif page == "📅 Calibration Tracker":
+    st.subheader("Annual Equipment Calibration Tracker")
+    
+    # Register New Device Calibration
+    with st.expander("➕ Register Device / Update Calibration Date"):
+        with st.form("cal_form"):
+            c1, c2 = st.columns(2)
+            dev_name = c1.text_input("Device Name", placeholder="e.g., Interacoustics Titan / Astera")
+            ser_no = c2.text_input("Asset / Serial Number", placeholder="e.g., 126398")
+            cal_room = c1.selectbox("Assigned Room", room_names)
+            last_cal_date = c2.date_input("Last Calibration Date", datetime.date.today())
+            
+            if st.form_submit_button("Save Calibration Record"):
+                db.add_calibration_record(dev_name, ser_no, cal_room, last_cal_date.strftime("%Y-%m-%d"))
+                st.success(f"Registered calibration record for {dev_name} ({ser_no})!")
+
+    # Display Calibration Schedule
+    st.markdown("### 📋 Annual Calibration Schedule")
+    df_cal = db.get_calibration_records()
+    if df_cal.empty:
+        st.info("No equipment calibration records registered yet.")
+    else:
+        st.dataframe(df_cal[["device_name", "serial_no", "room_name", "last_calibration", "next_calibration", "Days Remaining", "Calibration Alert"]], use_container_width=True)
+
+# =========================================================================
+# PAGE 5: AUDIT DASHBOARD
 # =========================================================================
 elif page == "📊 Audit Dashboard":
     st.subheader("CYPAC Stage A Quality & Management Audit Analytics")
@@ -207,15 +267,3 @@ elif page == "📊 Audit Dashboard":
         st.divider()
         st.markdown("### 🔍 Full Management Audit Log")
         st.dataframe(df_all, use_container_width=True)
-
-# =========================================================================
-# PAGE 4: FAULT LOGBOOK
-# =========================================================================
-elif page == "⚠️ Fault Logbook":
-    st.subheader("Active Equipment Issues")
-    df_faults = db.get_open_faults()
-    
-    if df_faults.empty:
-        st.success("🎉 No active equipment faults logged!")
-    else:
-        st.dataframe(df_faults, use_container_width=True)
